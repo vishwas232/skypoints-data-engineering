@@ -1,6 +1,9 @@
 # SkyPoints — Data Engineering Assessment
 
-ETL assessment project with source profiling, Snowflake schema, raw ingestion, and Phase 4 member transformations. The long-term target is a working file/JSON → Snowflake raw → staging → canonical member → country tables pipeline, with validation, audit, and safe incremental updates.
+ETL assessment project with profiling, raw ingestion, member transformations,
+country movement handling, redemption processing, and operational checks.
+See [current execution evidence](docs/verification.md) for successful CI and
+Snowflake acceptance tests, sample quarantine results, and remaining blockers.
 
 ## Current implementation status
 
@@ -9,9 +12,9 @@ ETL assessment project with source profiling, Snowflake schema, raw ingestion, a
 | 1 — Profile incoming files | Implemented; run locally | `src/profile_inputs.py` and three assessment sample workbooks |
 | 2 — Snowflake schema | SQL prepared; execute in your own account | `sql/01_create_tables.sql`, `sql/02_schema_checks.sql` |
 | 3 — Raw ingestion | Implemented; connect to Snowflake to verify | Excel and JSON ingestion into raw Snowflake tables |
-| 4 — Staging / latest-wins / country movements | Implemented; local tests only | Validation, derived fields, canonical member and country updates |
-| 5 — Redemptions | Implemented; local tests only | JSON flattening, verified member join, replay/conflict handling |
-| 6 — Tests and productionization | Implemented; local verification only | Offline CI, health gates, monitoring SQL and production measurement plan |
+| 4 — Staging / latest-wins / country movements | Implemented; warehouse scenarios verified | Validation, derived fields, canonical member and country updates |
+| 5 — Redemptions | Implemented; warehouse scenarios verified | JSON flattening, verified member join, replay/conflict handling |
+| 6 — Tests and productionization | Implemented; CI and live health checked | Monitoring policies still fail on sample rejection/timing; load scale unmeasured |
 
 ## Requirements
 
@@ -139,7 +142,10 @@ python -m src.transform_members --batch-id ACTUAL_COMPLETED_MEMBER_BATCH_ID --as
 
 All queries in `sql/05_verify_member_transform.sql` must return zero rows.
 
-No Snowflake run has been performed by this implementation task. The samples lack verified global identities and source update times; they are quarantined until a data owner supplies those facts. Do not guess mappings.
+Live sample batches have now been processed and quarantined because they lack
+verified global identities and source update times. Synthetic success-path
+tests also passed in isolated temporary tables. See `docs/verification.md`.
+Do not guess mappings to make the real samples pass.
 
 ## Phase 5: redemption processing and member join
 
@@ -159,7 +165,8 @@ remain quarantined until a real mapping and canonical member exist. Exact
 transaction replays deduplicate; conflicting facts are quarantined because the
 feed has no authoritative update-version field. `REDEMPTION_MEMBER_DETAIL`
 joins loaded transactions to current member attributes. Run one writer for the
-entire schema. Phase 5 has been tested locally; Snowflake execution is unverified.
+entire schema. Phase 5 has now passed isolated Snowflake acceptance scenarios;
+the actual sample remains unlinked. See `docs/verification.md` for evidence.
 
 ## Phase 6: CI, monitoring, and production readiness
 
@@ -178,5 +185,6 @@ python -m src.check_pipeline --help
 dashboards. `src/check_pipeline.py` checks configured source delivery,
 integrity, rejection rates, and transform lag with JSON and nonzero failures.
 New Snowflake sessions use UTC; review historic audit timezone assumptions
-before freshness checks. Snowflake, GitHub Actions, alert deployment, and
-production-scale performance remain unverified.
+before freshness checks. GitHub CI and functional Snowflake scenarios have now
+passed; live health reports rejection/timing failures. Alert deployment and
+production-scale performance remain unverified. See `docs/verification.md`.
