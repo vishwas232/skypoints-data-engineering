@@ -8,6 +8,28 @@ Snowflake acceptance tests, sample quarantine results, and remaining blockers.
 Start with the [submission and demonstration guide](docs/submission.md) for
 the architecture, reviewer navigation, reproduction steps, and open assumptions.
 
+## Relevant ETL experience
+
+My previous hands-on ETL work includes Python and SQL pipelines that extract
+relational data from MySQL, prepare CSV/GZIP files in Amazon S3, and load data
+into Amazon Redshift through AWS Lambda and Redshift COPY workflows.
+
+That work has involved:
+
+- Full reloads of master/reference data and incremental extraction of
+  transactional data using business scope and date filters.
+- Chunked extraction of larger parent/child datasets, compressed file parts,
+  staging loads, and source-to-target row-count validation.
+- Investigating CSV column mismatches, source/target schema differences,
+  Redshift load errors, and Lambda communication failures.
+- Checking table relationships and extraction filters against existing
+  business-report logic to identify missing or inconsistent data.
+
+These experiences inform this assessment's focus on explicit data contracts,
+staging, reconciliation, recoverable batches, and careful handling of ambiguous
+data. My earlier warehouse work used Redshift; this repository demonstrates
+those ETL principles in Snowflake, with its own tests and execution evidence.
+
 ## Current implementation status
 
 | Phase | Status | Contents |
@@ -17,7 +39,7 @@ the architecture, reviewer navigation, reproduction steps, and open assumptions.
 | 3 — Raw ingestion | Implemented; loaded RAW counts confirmed live | 9 member rows and 1 redemption document observed |
 | 4 — Staging / latest-wins / country movements | Implemented; warehouse scenarios verified | Validation, derived fields, canonical member and country updates |
 | 5 — Redemptions | Implemented; warehouse scenarios verified | JSON flattening, verified member join, replay/conflict handling |
-| 6 — Tests and productionization | Implemented; CI and live health checked | Monitoring policies still fail on sample rejection/timing; load scale unmeasured |
+| 6 — Tests and productionization | Implemented; CI and functional warehouse tests passed | Sample-data prerequisites, timing validation, and scale benchmarks remain open |
 
 ## Requirements
 
