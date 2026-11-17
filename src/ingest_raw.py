@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from openpyxl import load_workbook
+from src.source_contracts import snapshot_file
 
 COUNTRY_FILES = {"IND.xlsx": "IND", "USA.xlsx": "USA", "AUS.xlsx": "AUS"}
 
@@ -108,8 +109,12 @@ def connect_snowflake():
 
 
 def load_file(connection, path: Path, feed_type: str) -> tuple[str, int]:
+    with snapshot_file(path) as snapshot:
+        return _load_snapshot(connection, snapshot.path, feed_type, snapshot.sha256)
+
+
+def _load_snapshot(connection, path: Path, feed_type: str, digest: str) -> tuple[str, int]:
     source_system = f"SKYPOINTS_{COUNTRY_FILES[path.name]}" if feed_type == "MEMBER" else "SKYPOINTS_REDEMPTIONS"
-    digest = file_hash(path)
     bid = batch_id(source_system, feed_type, digest)
     cursor = connection.cursor()
     try:
@@ -129,6 +134,8 @@ def load_file(connection, path: Path, feed_type: str) -> tuple[str, int]:
             (bid, source_system, path.name, digest, feed_type))
         count = 0
         for item in records(path, feed_type):
+            if item.get('batch_id', bid) != bid:
+                raise RuntimeError('Immutable source fingerprint mismatch; batch rolled back')
             encoded = json.dumps(item["payload"], ensure_ascii=False, allow_nan=False)
             if feed_type == "MEMBER":
                 cursor.execute("""INSERT INTO SKYPOINTS.RAW_MEMBER_PROFILE

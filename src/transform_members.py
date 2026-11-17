@@ -12,10 +12,11 @@ import json
 import re
 
 from src.ingest_raw import connect_snowflake
+from src.source_contracts import normalize_member_payload
 
 COUNTRIES = {'IN': 'IND', 'IND': 'IND', 'US': 'USA', 'USA': 'USA',
              'AU': 'AUS', 'AUS': 'AUS', 'CA': 'CAN', 'CAN': 'CAN',
-             'PH': 'PHL', 'PHL': 'PHL', 'GB': 'GBR', 'GBR': 'GBR',
+             'PH': 'PHL', 'PHIL': 'PHL', 'PHL': 'PHL', 'GB': 'GBR', 'GBR': 'GBR',
              'NZ': 'NZL', 'NZL': 'NZL'}
 TARGETS = {'IND': 'TABLE_INDIA', 'USA': 'TABLE_USA', 'AUS': 'TABLE_AUSTRALIA',
            'CAN': 'TABLE_CANADA', 'PHL': 'TABLE_PHILIPPINES'}
@@ -37,10 +38,16 @@ def text(value):
     return None if value.upper() in ('', 'NULL', 'NONE') else value
 
 
-def parse_date(value, source):
+def parse_date(value, source, field=None, dob_format=None):
     value = text(value)
     if value is None:
         return None
+    if field == 'DOB' and re.fullmatch(r'\d{7,8}', value):
+        if dob_format not in ('DDMMYYYY', 'MMDDYYYY', 'YYYYMMDD'):
+            raise ValueError('Explicit DOB format required')
+        return datetime.strptime(value.zfill(8), {'DDMMYYYY':'%d%m%Y','MMDDYYYY':'%m%d%Y','YYYYMMDD':'%Y%m%d'}[dob_format]).date()
+    if re.fullmatch(r'\d{8}', value) and int(value[:4]) >= 1800:
+        return datetime.strptime(value, '%Y%m%d').date()
     # USA's documented sample format is MMDDYYYY, with lost leading zeroes.
     if source == 'SKYPOINTS_USA' and re.fullmatch(r'\d{7,8}', value):
         return datetime.strptime(value.zfill(8), '%m%d%Y').date()
@@ -66,6 +73,8 @@ def transform(raw, identities, as_of, version=None):
     if not isinstance(p, dict):
         p = {}
         errors.append('INVALID_PAYLOAD_OBJECT')
+    p = normalize_member_payload(p)
+    errors.extend(p.get('_parse_errors', []))
     out = dict.fromkeys(FIELDS)
     out.update(RAW_RECORD_ID=raw['RAW_RECORD_ID'], BATCH_ID=raw['BATCH_ID'],
                INGESTED_AT=raw.get('INGESTED_AT'), SOURCE_SYSTEM=raw['SOURCE_SYSTEM'], AS_OF_DATE=as_of)
@@ -79,7 +88,7 @@ def transform(raw, identities, as_of, version=None):
     out['IS_ACTIVE'] = pick('IsActive')
     out['AGENT_NAME'], out['STATE_CODE'], out['POST_CODE'] = pick('AgentName'), pick('StateCode'), pick('PostCode')
     for key, limit in [('SOURCE_MEMBER_ID', 18), ('MEMBER_NAME', 255), ('TIER_CODE', 5),
-                       ('AGENT_NAME', 255), ('STATE_CODE', 5), ('POST_CODE', 20)]:
+                       ('AGENT_NAME', 255), ('STATE_CODE', 5), ('POST_CODE', 5)]:
         if out[key] and len(out[key]) > limit:
             errors.append('TOO_LONG_' + key)
             out[key] = None  # Full invalid value remains in RAW, not a narrow staging column.
@@ -90,7 +99,7 @@ def transform(raw, identities, as_of, version=None):
                          ('ENROLLMENT_DATE', ('EnrollmentDate', 'Date of Enrollment')),
                          ('LAST_FLIGHT_DATE', ('FlightDate', 'Flight Date', 'Date of Flight'))]:
         try:
-            out[key] = parse_date(pick(*aliases), out['SOURCE_SYSTEM'])
+            out[key] = parse_date(pick(*aliases), out['SOURCE_SYSTEM'], key, raw.get('DOB_FORMAT'))
             if out[key] and out[key] > as_of:
                 errors.append('FUTURE_' + key)
         except ValueError:
@@ -104,9 +113,13 @@ def transform(raw, identities, as_of, version=None):
     if out['MEMBER_TYPE'] not in (None, 'I', 'C'):
         errors.append('INVALID_MEMBER_TYPE')
         out['MEMBER_TYPE'] = None
+    out['IS_ACTIVE'] = {'A':'Y','I':'N','Y':'Y','N':'N',None:None}.get(out['IS_ACTIVE'], out['IS_ACTIVE'])
     if out['IS_ACTIVE'] not in (None, 'Y', 'N'):
         errors.append('INVALID_IS_ACTIVE')
         out['IS_ACTIVE'] = None
+    if out['POST_CODE'] is not None and not re.fullmatch(r'[0-9]{1,5}', out['POST_CODE']):
+        errors.append('INVALID_POST_CODE')
+        out['POST_CODE'] = None
     mapping = identities.get((out['SOURCE_SYSTEM'], out['SOURCE_MEMBER_ID']), [])
     if len(mapping) != 1 or not text(mapping[0]) or len(str(mapping[0])) > 100:
         errors.append('UNRESOLVED_OR_AMBIGUOUS_IDENTITY')
@@ -192,9 +205,6 @@ def run(connection, batch_id, as_of):
         for row in history:
             if row['VALIDATION_STATUS'] == 'VALID' and identities.get((row['SOURCE_SYSTEM'], row['SOURCE_MEMBER_ID'])) != [row['GLOBAL_MEMBER_ID']]:
                 raise RuntimeError('Previously accepted identity changed; controlled rebuild required')
-        previous_runs = query(cur, "SELECT MAX(AS_OF_DATE) AS D FROM SKYPOINTS.MEMBER_TRANSFORM_RUN WHERE STATUS='COMPLETED'")
-        if previous_runs[0]['D'] and as_of < previous_runs[0]['D']:
-            raise RuntimeError('Processing date cannot go backwards')
         run_id = digest([batch_id, as_of, sorted(raw, key=lambda r:r['RAW_RECORD_ID']),
                          sorted(maps, key=lambda r:json.dumps(r, sort_keys=True, default=str)), versions])
         done = query(cur, 'SELECT STATUS FROM SKYPOINTS.MEMBER_TRANSFORM_RUN WHERE RUN_ID=%s', (run_id,))
@@ -203,6 +213,9 @@ def run(connection, batch_id, as_of):
                 raise RuntimeError('Invalid transform run state')
             connection.rollback()
             return {'status': 'SKIPPED', 'run_id': run_id}
+        previous_runs = query(cur, "SELECT MAX(AS_OF_DATE) AS D FROM SKYPOINTS.MEMBER_TRANSFORM_RUN WHERE STATUS='COMPLETED'")
+        if previous_runs[0]['D'] and as_of < previous_runs[0]['D']:
+            raise RuntimeError('Processing date cannot go backwards')
         staged = [transform(r, identities, as_of, versions[0] if versions else None) for r in raw]
         new_by_id = {r['RAW_RECORD_ID']: r for r in staged}
         for previous in history:
