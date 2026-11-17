@@ -8,8 +8,8 @@ ETL assessment project with source profiling (Phase 1) and Snowflake database de
 |---|---|---|
 | 1 — Profile incoming files | Implemented; run locally | `src/profile_inputs.py` and three assessment sample workbooks |
 | 2 — Snowflake schema | SQL prepared; execute in your own account | `sql/01_create_tables.sql`, `sql/02_schema_checks.sql` |
-| 3 — Ingestion and transformation | Not implemented | Excel / pipe-delimited / JSON ingestion into Snowflake |
-| 4 — Latest-wins and country movements | Not implemented | Canonical member and country updates |
+| 3 — Raw ingestion | Implemented; connect to Snowflake to verify | Excel and JSON ingestion into raw Snowflake tables |
+| 4 — Staging / latest-wins / country movements | Not implemented | Validation, derived fields, canonical member and country updates |
 | 5 — Redemptions | Not implemented | JSON flattening and member join |
 | 6 — Tests and productionization | Not implemented | Automated checks, monitoring, scalability plan |
 
@@ -81,3 +81,46 @@ See `docs/decisions.md` for the member identity, data quality, and source-orderi
 ## AI usage
 
 AI-assisted code and design are reviewed and tested by the submitting engineer. Record actual decisions, tests, and changes in subsequent commits. Do not represent conceptual scalability design as a measured billion-row benchmark.
+
+## Phase 3: ingest data to Snowflake RAW (small assessment demo)
+
+Phase 3 adds `src/ingest_raw.py`: an Excel + JSON adapter that preserves each
+source row as a `VARIANT` payload in the raw layer. This is intentionally **raw ingestion only**:
+it does not populate `STG_MEMBER_PROFILE`, `MEMBER_CURRENT`, country tables, or
+flatten redemptions. Those transformations follow in later phases.
+
+### Windows Command Prompt
+
+From the project root, run:
+
+```cmd
+python -m pip install -r requirements.txt
+python -m unittest discover -s tests -v
+python -m src.ingest_raw --feed members --dry-run
+python -m src.ingest_raw --feed redemptions --json-file data/samples/redemptions/example.json --dry-run
+```
+
+Copy `.env.example` to `.env` and enter your Snowflake account, username,
+password, warehouse and database. Keep `.env` private. After Phase 2 DDL is
+already run in that database:
+
+```cmd
+python -m src.ingest_raw --feed members
+python -m src.ingest_raw --feed redemptions --json-file data/samples/redemptions/example.json
+```
+
+Then execute `sql/03_verify_raw_load.sql` in Snowsight. On a fresh environment
+you should find 9 member raw rows (3 for each workbook) and one redemption
+raw document. Re-running the same unchanged file skips that completed batch.
+
+**Semantics and limits:** Batch IDs are determined by source system, feed type,
+and SHA-256 of file bytes; raw record IDs use the batch ID and row number.
+A batch writes its records and completion status in one Snowflake transaction;
+failures roll back. This is a simple synchronous demonstration suitable for the
+sample files, **not** a billion-row loading strategy. Production ingestion would
+stage compressed columnar/JSON files and use Snowflake `COPY INTO` (with file
+tracking, partitioning, schema contracts, and monitoring). Raw JSON contains a
+member ID that is not automatically resolvable to the Excel files' local IDs;
+we must not invent a member linkage.
+
+Commit Phase 3 after validating: `git add . && git commit -m "feat: ingest member and redemption feeds into raw Snowflake tables"`.
