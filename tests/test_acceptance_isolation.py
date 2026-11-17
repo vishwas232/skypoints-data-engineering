@@ -1,28 +1,24 @@
-import unittest
-from src.snowflake_acceptance import rewrite,IsolatedCursor,InjectedFailure,TABLES
+﻿import unittest
+from unittest.mock import patch
+from src.pipeline import Namespace,Pipeline
 
 
 class AcceptanceIsolationTests(unittest.TestCase):
-    def test_all_allowlisted_objects_rewrite_to_unique_fixture_names(self):
-        prefix='ACCEPT_123456ABCDEF_'
-        for table in TABLES:
-            self.assertEqual('SELECT * FROM SKYPOINTS.'+prefix+table,
-                             rewrite('SELECT * FROM SKYPOINTS.'+table,prefix))
+    def test_production_and_legacy_namespaces_are_refused(self):
+        for name in ('SKYPOINTS','PUBLIC','PROD','SKYPOINTS_TEST_not_a_unique_id'):
+            with self.assertRaises(ValueError): Namespace('ASSESSMENT',name)
 
-    def test_unknown_objects_and_unsafe_prefixes_are_refused(self):
-        with self.assertRaises(ValueError):
-            rewrite('DELETE FROM SKYPOINTS.UNKNOWN','ACCEPT_123456ABCDEF_')
-        with self.assertRaises(ValueError):
-            rewrite('SELECT * FROM SKYPOINTS.MEMBER_CURRENT','bad;prefix')
+    def test_existing_test_schema_is_never_adopted_or_modified(self):
+        engine=Pipeline(None,Namespace('ASSESSMENT','SKYPOINTS_TEST_ABCDEF123456'))
+        with patch.object(engine,'scalar',return_value=1),patch.object(engine,'execute') as execute:
+            with self.assertRaisesRegex(RuntimeError,'already exists'): engine.deploy()
+            execute.assert_not_called()
+        with self.assertRaises(RuntimeError): engine.drop_owned_test_schema()
 
-    def test_failure_is_injected_before_audit_write(self):
-        class Cursor:
-            def execute(self,*args):
-                raise AssertionError('Underlying write must not occur')
-        cur=IsolatedCursor(Cursor(),'ACCEPT_123456ABCDEF_',True)
-        with self.assertRaises(InjectedFailure):
-            cur.execute('INSERT INTO SKYPOINTS.MEMBER_TRANSFORM_RUN VALUES (1)')
+    def test_failure_injection_is_refused_in_persistent_development_schema(self):
+        engine=Pipeline(None,Namespace('ASSESSMENT','SKYPOINTS_DEV'))
+        with self.assertRaisesRegex(ValueError,'isolated test'):
+            engine.process('a'*64,__import__('datetime').date(2026,11,18),fail_before_commit=True)
 
 
-if __name__=='__main__':
-    unittest.main()
+if __name__=='__main__': unittest.main()

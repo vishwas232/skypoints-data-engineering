@@ -32,6 +32,8 @@ jobs:
         run: python -m pip check
       - name: Run offline tests
         run: python -m unittest discover -s tests -v
+      - name: Validate native CLI without Snowflake credentials
+        run: python -m src.pipeline --help
       - name: Validate source inputs without Snowflake
         run: python -m src.ingest_raw --feed members --dry-run
       - name: Validate redemption adapter without member linkage
