@@ -104,7 +104,7 @@ def connect_snowflake():
     return snowflake.connector.connect(account=os.environ["SNOWFLAKE_ACCOUNT"],
         user=os.environ["SNOWFLAKE_USER"], password=os.environ["SNOWFLAKE_PASSWORD"],
         warehouse=os.environ["SNOWFLAKE_WAREHOUSE"], database=os.environ["SNOWFLAKE_DATABASE"],
-        schema="SKYPOINTS", autocommit=False)
+        schema="SKYPOINTS", autocommit=False, session_parameters={"TIMEZONE": "UTC"})
 
 
 def load_file(connection, path: Path, feed_type: str) -> tuple[str, int]:
@@ -114,7 +114,10 @@ def load_file(connection, path: Path, feed_type: str) -> tuple[str, int]:
     cursor = connection.cursor()
     try:
         cursor.execute("SELECT STATUS FROM SKYPOINTS.INGEST_BATCH WHERE BATCH_ID = %s", (bid,))
-        previous = cursor.fetchone()
+        previous_rows = cursor.fetchall()
+        if len(previous_rows) > 1:
+            raise RuntimeError('Duplicate ingestion batch IDs; investigate before retry')
+        previous = previous_rows[0] if previous_rows else None
         if previous and previous[0] == "COMPLETED":
             return "SKIPPED_ALREADY_LOADED", 0
         if previous:

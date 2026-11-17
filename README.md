@@ -11,7 +11,7 @@ ETL assessment project with source profiling, Snowflake schema, raw ingestion, a
 | 3 — Raw ingestion | Implemented; connect to Snowflake to verify | Excel and JSON ingestion into raw Snowflake tables |
 | 4 — Staging / latest-wins / country movements | Implemented; local tests only | Validation, derived fields, canonical member and country updates |
 | 5 — Redemptions | Implemented; local tests only | JSON flattening, verified member join, replay/conflict handling |
-| 6 — Tests and productionization | Not implemented | Automated checks, monitoring, scalability plan |
+| 6 — Tests and productionization | Implemented; local verification only | Offline CI, health gates, monitoring SQL and production measurement plan |
 
 ## Requirements
 
@@ -160,3 +160,23 @@ transaction replays deduplicate; conflicting facts are quarantined because the
 feed has no authoritative update-version field. `REDEMPTION_MEMBER_DETAIL`
 joins loaded transactions to current member attributes. Run one writer for the
 entire schema. Phase 5 has been tested locally; Snowflake execution is unverified.
+
+## Phase 6: CI, monitoring, and production readiness
+
+See the [Phase 6 runbook](docs/phase6.md) for validation, monitoring policies,
+UTC prerequisites, recovery, and Git commands. The
+[productionization plan](docs/productionization.md) separates this bounded
+assessment implementation from proposed bulk loading and benchmarks.
+
+```cmd
+python -m unittest discover -s tests -v
+python -m src.check_pipeline --help
+```
+
+`.github/workflows/ci.yml` defines offline Windows/Linux checks for Python
+3.12/3.13. SQL 08 adds zero-row readiness checks; SQL 09 provides aggregate
+dashboards. `src/check_pipeline.py` checks configured source delivery,
+integrity, rejection rates, and transform lag with JSON and nonzero failures.
+New Snowflake sessions use UTC; review historic audit timezone assumptions
+before freshness checks. Snowflake, GitHub Actions, alert deployment, and
+production-scale performance remain unverified.
