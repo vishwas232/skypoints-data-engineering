@@ -9,7 +9,7 @@ account identifiers, or database names are included.
 
 | Verification | Result |
 |---|---|
-| GitHub Actions, commit `02c2f8c` | All four Windows/Linux, Python 3.12/3.13 jobs succeeded |
+| GitHub Actions, commit `9a05bb5` | 61-test suite; all four Windows/Linux, Python 3.12/3.13 jobs succeeded |
 | Assessment Snowflake connection/schema | Connected; Phase 2/4/5 objects already present |
 | Three real member batches | Completed; 9 inputs, 0 accepted, 9 quarantined |
 | Real redemption batch | Completed; 1 document, 2 items, 0 accepted items, 2 quarantined items |
@@ -18,9 +18,10 @@ account identifiers, or database names are included.
 | Synthetic warehouse acceptance | All seven scenarios passed in unique session-temporary tables |
 | Live health report | 71 checks, 62 passed, 9 policy failures; integrity SQL returned zero rows |
 
-CI evidence: [successful GitHub Actions run](https://github.com/vishwas232/skypoints-data-engineering/actions/runs/44150696013).
-The workflow exercised the 58-test suite at that commit. Three new isolation
-guard tests accompany the acceptance harness and need a new CI run after push.
+Latest CI evidence: [successful 61-test GitHub Actions run](https://github.com/vishwas232/skypoints-data-engineering/actions/runs/44152629650)
+at commit `9a05bb5`. This includes the three new isolation guard tests.
+The earlier [58-test run](https://github.com/vishwas232/skypoints-data-engineering/actions/runs/44150696013)
+at `02c2f8c` also succeeded. All 61 tests passed locally before `9a05bb5` was pushed.
 
 Assessment staging now has 9 member rows and 3 redemption rows (one DOCUMENT,
 two ITEMs). There are 12 quarantine entries: 9 members, one redemption
@@ -94,15 +95,16 @@ restoration/RPO/RTO, and the measured bulk-load benchmarks described in
 `docs/productionization.md`. The seven small synthetic scenarios establish
 functional warehouse behavior, not billion-row capacity.
 
-## Save verification work
+## Save final submission documentation
 
 ```cmd
-git add README.md docs/verification.md src/snowflake_acceptance.py tests/test_acceptance_isolation.py
+git add README.md docs/verification.md docs/submission.md
 git diff --cached --check
 git diff --cached --stat
-git commit -m "test: verify Snowflake acceptance with isolated synthetic fixtures"
+git commit -m "docs: prepare assessment submission and update CI evidence"
 git push origin main
 ```
 
-Review the staged diff and leave unrelated untracked files untouched. This
-verification task has not committed or pushed these new files.
+The acceptance harness and its tests were committed and pushed as `9a05bb5`.
+This final documentation update has not been committed or pushed. Review the
+staged diff and leave unrelated untracked files untouched.

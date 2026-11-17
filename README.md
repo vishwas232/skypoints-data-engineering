@@ -5,13 +5,16 @@ country movement handling, redemption processing, and operational checks.
 See [current execution evidence](docs/verification.md) for successful CI and
 Snowflake acceptance tests, sample quarantine results, and remaining blockers.
 
+Start with the [submission and demonstration guide](docs/submission.md) for
+the architecture, reviewer navigation, reproduction steps, and open assumptions.
+
 ## Current implementation status
 
 | Phase | Status | Contents |
 |---|---|---|
 | 1 — Profile incoming files | Implemented; run locally | `src/profile_inputs.py` and three assessment sample workbooks |
-| 2 — Snowflake schema | SQL prepared; execute in your own account | `sql/01_create_tables.sql`, `sql/02_schema_checks.sql` |
-| 3 — Raw ingestion | Implemented; connect to Snowflake to verify | Excel and JSON ingestion into raw Snowflake tables |
+| 2 — Snowflake schema | Schema present during live verification | `sql/01_create_tables.sql`, additive Phase 4/5 migrations |
+| 3 — Raw ingestion | Implemented; loaded RAW counts confirmed live | 9 member rows and 1 redemption document observed |
 | 4 — Staging / latest-wins / country movements | Implemented; warehouse scenarios verified | Validation, derived fields, canonical member and country updates |
 | 5 — Redemptions | Implemented; warehouse scenarios verified | JSON flattening, verified member join, replay/conflict handling |
 | 6 — Tests and productionization | Implemented; CI and live health checked | Monitoring policies still fail on sample rejection/timing; load scale unmeasured |
