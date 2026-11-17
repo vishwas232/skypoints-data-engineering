@@ -73,7 +73,7 @@ class SourceContractsTests(unittest.TestCase):
             rows=list(flat_file_rows(p))
             self.assertIn('DETAIL_FIELD_COUNT_MISMATCH',rows[0][1]['_parse_errors'])
             self.assertIn('INVALID_DETAIL_MARKER',rows[1][1]['_parse_errors'])
-            for header in ('|D|A|1|20200101','|H|Member_Name|Member_Name|Enrollment_Date','|H|Name|ID|Unexpected'):
+            for header in ('|D|A|1|20200101','|H|Member_Name|Member_Name|Enrollment_Date','|H|Name|ID|Unexpected','|H|Member_Name|Name|Member_Id|Enrollment_Date'):
                 p.write_text(header)
                 with self.assertRaises(ValueError): list(flat_file_rows(p))
 
@@ -84,6 +84,11 @@ class SourceContractsTests(unittest.TestCase):
                 p.write_text(content)
                 self.assertEqual(expected,len(list(json_documents(p))))
             for content in ('[1,]','[1 2]','[','{}x','[{}]x'):
+                p.write_text(content)
+                with self.assertRaises(ValueError): list(json_documents(p))
+            p.write_text('['+' '*65534+'1e2]')
+            self.assertEqual(100.0,list(json_documents(p))[0][1])
+            for content in ('{"member_id":1,"member_id":2}','[{"a":1,"a":2}]','{"a":NaN}'):
                 p.write_text(content)
                 with self.assertRaises(ValueError): list(json_documents(p))
             p.write_text('{"a":"'+'x'*100+'"}')

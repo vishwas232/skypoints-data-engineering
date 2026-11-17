@@ -8,7 +8,6 @@ import gzip
 import hashlib
 import json
 from pathlib import Path
-import shutil
 import tempfile
 from typing import Iterator
 
@@ -80,6 +79,8 @@ def flat_file_rows(path: Path) -> Iterator[tuple[int, dict]]:
                 header = [v.strip() for v in values]
                 if len(header) != len(set(header)) or any(not v for v in header):
                     raise ValueError('Duplicate or empty member header')
+                if any(sum(k in header for k in aliases)>1 for aliases in ALIASES.values()):
+                    raise ValueError('Ambiguous duplicate aliases in member header')
                 normalized = normalize_member_payload(dict.fromkeys(header, 'present'))
                 if any(normalized[k] is None for k in ('ID', 'Name', 'EnrollmentDate')):
                     raise ValueError('Missing required member header')
@@ -107,6 +108,19 @@ def json_documents(path: Path, max_document_chars=8 * 1024 * 1024):
     A single JSON document is bounded; use JSONL for high-volume transport.
     """
     path = Path(path)
+    def unique_object(pairs):
+        result={}
+        for key,value in pairs:
+            if key in result: raise ValueError('Duplicate JSON object key')
+            result[key]=value
+        return result
+    def invalid_constant(value):
+        raise ValueError('Nonfinite JSON number is not allowed')
+    def decode(value):
+        return json.loads(value,object_pairs_hook=unique_object,parse_constant=invalid_constant)
+    def finish(buffer,stream):
+        if buffer.strip() or any(block.strip() for block in iter(lambda:stream.read(65536),'')):
+            raise ValueError('Data after JSON array')
     if path.suffix.lower() == '.jsonl':
         with path.open(encoding='utf-8-sig') as stream:
             number = 0
@@ -118,7 +132,7 @@ def json_documents(path: Path, max_document_chars=8 * 1024 * 1024):
                 if len(line) > max_document_chars:
                     raise ValueError('JSON document exceeds configured bound')
                 if line.strip():
-                    yield number, json.loads(line)
+                    yield number, decode(line)
         return
     with path.open(encoding='utf-8-sig') as stream:
         first = ''
@@ -131,9 +145,9 @@ def json_documents(path: Path, max_document_chars=8 * 1024 * 1024):
             value = first + stream.read(max_document_chars + 1)
             if len(value) > max_document_chars:
                 raise ValueError('JSON document exceeds configured bound')
-            yield 1, json.loads(value)
+            yield 1, decode(value)
             return
-        decoder, buffer, eof, number = json.JSONDecoder(), '', False, 0
+        decoder, buffer, eof, number = json.JSONDecoder(object_pairs_hook=unique_object,parse_constant=invalid_constant), '', False, 0
         expect_value, allow_end = True, True
         while True:
             buffer = buffer.lstrip()
@@ -144,8 +158,7 @@ def json_documents(path: Path, max_document_chars=8 * 1024 * 1024):
                 continue
             if expect_value:
                 if buffer.startswith(']') and allow_end:
-                    if (buffer[1:] + stream.read()).strip():
-                        raise ValueError('Data after JSON array')
+                    finish(buffer[1:],stream)
                     return
                 try:
                     value, end = decoder.raw_decode(buffer)
@@ -163,6 +176,12 @@ def json_documents(path: Path, max_document_chars=8 * 1024 * 1024):
                     buffer += block
                     eof = not block
                     continue
+                tail=buffer[end:].lstrip()
+                if tail and tail[0] not in ',]' and not eof:
+                    block=stream.read(65536)
+                    buffer+=block
+                    eof=not block
+                    continue
                 if end > max_document_chars:
                     raise ValueError('JSON document exceeds configured bound')
                 number += 1
@@ -171,8 +190,7 @@ def json_documents(path: Path, max_document_chars=8 * 1024 * 1024):
             elif buffer.startswith(','):
                 buffer, expect_value, allow_end = buffer[1:], True, False
             elif buffer.startswith(']'):
-                if (buffer[1:] + stream.read()).strip():
-                    raise ValueError('Data after JSON array')
+                finish(buffer[1:],stream)
                 return
             elif not buffer and not eof:
                 continue

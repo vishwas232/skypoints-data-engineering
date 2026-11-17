@@ -185,9 +185,12 @@ class Pipeline:
             self.connection.rollback()
             raise
 
-    def attempt(self,batch,phase,status,error=None):
-        self.execute(f'INSERT INTO {self.ns.sql}.PIPELINE_ATTEMPT (ATTEMPT_ID,BATCH_ID,PHASE,STATUS,ERROR_CATEGORY,QUERY_ID) VALUES (%s,%s,%s,%s,%s,%s)',
-                     (uuid.uuid4().hex,batch,phase,status,error,self.query_ids[-1] if self.query_ids else None))
+    def record_attempt(self,batch,phase,status,error=None,source=None,feed=None):
+        self.execute(f'INSERT INTO {self.ns.sql}.PIPELINE_ATTEMPT (ATTEMPT_ID,BATCH_ID,PHASE,STATUS,ERROR_CATEGORY,QUERY_ID,SOURCE_SYSTEM,FEED_TYPE) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)',
+                     (uuid.uuid4().hex,batch,phase,status,error,self.query_ids[-1] if self.query_ids else None,source,feed))
+
+    def attempt(self,batch,phase,status,error=None,source=None,feed=None):
+        self.record_attempt(batch,phase,status,error,source,feed)
         self.connection.commit()
 
     def ingest(self,path: Path,contract: Contract,as_of: date,part_bytes=64*1024*1024):
@@ -200,6 +203,7 @@ class Pipeline:
             if len(existing)>1: raise RuntimeError('Duplicate batch ledger keys')
             if existing:
                 if existing[0]['STATUS'] not in ('LOADED','COMPLETED'): raise RuntimeError('Unexpected persisted batch state')
+                self.attempt(bid,'INGEST','REPLAY_CONFIRMED',source=contract.source,feed=contract.feed)
                 return {'status':'SKIPPED_RAW','batch_id':bid,'seconds':time.perf_counter()-started}
             iterator=(json_documents(snapshot.path) if contract.feed=='REDEMPTION' else
                       flat_file_rows(snapshot.path) if contract.source_format=='PDF' else workbook_rows(snapshot.path))
@@ -211,7 +215,10 @@ class Pipeline:
             try:
                 with tempfile.TemporaryDirectory(prefix='skypoints-parts-') as directory:
                     parts,count=write_parts(prepared(),Path(directory),part_bytes)
-                    stage=f'@{self.ns.sql}.INGEST_STAGE/{bid}/'
+                    # Physical uploads are unique per attempt. A retry with a
+                    # different chunk size cannot accidentally COPY stale parts.
+                    upload_prefix=f'{bid}/{uuid.uuid4().hex}/'
+                    stage=f'@{self.ns.sql}.INGEST_STAGE/{upload_prefix}'
                     for part in parts:
                         uri=part.resolve().as_uri().replace("'","''")
                         result=self.execute(f"PUT '{uri}' {stage} AUTO_COMPRESS=FALSE OVERWRITE=FALSE")
@@ -223,11 +230,11 @@ class Pipeline:
                         self.execute(f'''INSERT INTO {self.ns.sql}.INGEST_BATCH
                         (BATCH_ID,SOURCE_SYSTEM,FEED_TYPE,SOURCE_FILE,FILE_SHA256,SOURCE_UPDATE_TS,SOURCE_SEQUENCE,
                          SOURCE_FORMAT,DOB_FORMAT,IDENTITY_SCOPE,IDENTITY_AUTHORITY,ENFORCE_NAME_KEY,ALLOW_TRANSACTION_UPDATES,
-                         AS_OF_DATE,STATUS,INPUT_ROWS,FINISHED_AT)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'LOADED',%s,NULL)''',
+                         AS_OF_DATE,STATUS,INPUT_ROWS,STAGE_PREFIX,FINISHED_AT)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'LOADED',%s,%s,NULL)''',
                         (bid,contract.source,contract.feed,snapshot.original_name,snapshot.sha256,contract.snapshot_ts,contract.sequence,
                          contract.source_format,contract.dob_format,contract.identity_scope,contract.identity_authority,
-                         contract.enforce_name_key,contract.allow_transaction_updates,as_of,count))
+                         contract.enforce_name_key,contract.allow_transaction_updates,as_of,count,upload_prefix))
                         table='RAW_MEMBER_PROFILE' if contract.feed=='MEMBER' else 'RAW_REDEMPTION_FEED'
                         if parts:
                             self.execute(f'''COPY INTO {self.ns.sql}.{table}
@@ -239,10 +246,10 @@ class Pipeline:
                         if actual!=count: raise RuntimeError('COPY count reconciliation failed')
                         if contract.identity_scope=='GLOBAL': self.register_declared_global(bid,contract,table)
                         self.execute(f'UPDATE {self.ns.sql}.INGEST_BATCH SET FINISHED_AT=CURRENT_TIMESTAMP() WHERE BATCH_ID=%s',(bid,))
-                self.attempt(bid,'INGEST','COMPLETED')
+                self.attempt(bid,'INGEST','COMPLETED',source=contract.source,feed=contract.feed)
             except Exception as e:
                 self.connection.rollback()
-                self.attempt(bid,'INGEST','FAILED',type(e).__name__)
+                self.attempt(bid,'INGEST','FAILED',type(e).__name__,contract.source,contract.feed)
                 raise
         return {'status':'LOADED','batch_id':bid,'input_rows':count,'parts':len(parts),
                 'seconds':time.perf_counter()-started,'source_bytes':snapshot.size}
@@ -255,20 +262,21 @@ class Pipeline:
           %s||':'||{self.ns.sql}.CLEAN_TEXT({expr}) AS GLOBAL_MEMBER_ID
          FROM {self.ns.sql}.{table} WHERE BATCH_ID=%s
           AND LENGTH({self.ns.sql}.CLEAN_TEXT({expr})) BETWEEN 1 AND 18
+          AND TYPEOF({expr}) IN ('VARCHAR','INTEGER')
         ) s ON m.SOURCE_SYSTEM=s.SOURCE_SYSTEM AND m.SOURCE_MEMBER_ID=s.SOURCE_MEMBER_ID
         WHEN NOT MATCHED THEN INSERT (SOURCE_SYSTEM,SOURCE_MEMBER_ID,GLOBAL_MEMBER_ID,MAPPING_METHOD)
          VALUES (s.SOURCE_SYSTEM,s.SOURCE_MEMBER_ID,s.GLOBAL_MEMBER_ID,'DECLARED_GLOBAL_CONTRACT')''',
          (contract.identity_authority,bid))
         conflicts=self.scalar(f'''SELECT COUNT(*) FROM {self.ns.sql}.{table} r JOIN {self.ns.sql}.MEMBER_IDENTITY_MAP m
          ON r.SOURCE_SYSTEM=m.SOURCE_SYSTEM AND {self.ns.sql}.CLEAN_TEXT({expr})=m.SOURCE_MEMBER_ID
-         WHERE r.BATCH_ID=%s AND m.GLOBAL_MEMBER_ID<>%s||':'||m.SOURCE_MEMBER_ID''',(bid,contract.identity_authority))
+         WHERE r.BATCH_ID=%s AND m.GLOBAL_MEMBER_ID IS DISTINCT FROM (%s||':'||m.SOURCE_MEMBER_ID)''',(bid,contract.identity_authority))
         if conflicts: raise RuntimeError('Declared global contract conflicts with an existing mapping')
 
     def add_mappings(self,rows):
         with self.transaction():
             for row in rows:
                 source,local,global_id=(row[k] for k in ('source_system','source_member_id','global_member_id'))
-                if not re.fullmatch(r'[A-Z0-9_]{1,100}',source) or not isinstance(local,str) or not 1<=len(local)<=18 or not isinstance(global_id,str) or not 1<=len(global_id)<=100:
+                if not re.fullmatch(r'[A-Z0-9_]{1,100}',source) or not isinstance(local,str) or not 1<=len(local)<=18 or not local.strip() or local!=local.strip() or not isinstance(global_id,str) or not 1<=len(global_id)<=100 or not global_id.strip() or global_id!=global_id.strip() or global_id.upper() in ('NULL','NONE'):
                     raise ValueError('Invalid reviewed identity mapping')
                 old=self.execute(f'SELECT GLOBAL_MEMBER_ID FROM {self.ns.sql}.MEMBER_IDENTITY_MAP WHERE SOURCE_SYSTEM=%s AND SOURCE_MEMBER_ID=%s',(source,local))
                 if old and (len(old)!=1 or old[0]['GLOBAL_MEMBER_ID']!=global_id):
@@ -292,6 +300,7 @@ class Pipeline:
         if not re.fullmatch(r'[a-f0-9]{64}',bid): raise ValueError('Invalid batch ID')
         if fail_before_commit and not self.ns.is_test: raise ValueError('Failure injection requires isolated test schema')
         started=time.perf_counter()
+        batch={}
         try:
             with self.transaction():
                 batches=self.execute(f'SELECT * FROM {self.ns.sql}.INGEST_BATCH WHERE BATCH_ID=%s',(bid,))
@@ -303,6 +312,7 @@ class Pipeline:
                 previous=self.execute(f'SELECT STATUS FROM {self.ns.sql}.PIPELINE_RUN WHERE RUN_ID=%s',(run_id,))
                 if previous:
                     if len(previous)!=1 or previous[0]['STATUS']!='COMPLETED': raise RuntimeError('Corrupt completed-run checkpoint')
+                    self.record_attempt(bid,'TRANSFORM','REPLAY_CONFIRMED',source=batch['SOURCE_SYSTEM'],feed=batch['FEED_TYPE'])
                     return {'status':'SKIPPED','batch_id':bid,'run_id':run_id,'seconds':time.perf_counter()-started}
                 latest=self.scalar(f'SELECT MAX(AS_OF_DATE) FROM {self.ns.sql}.PIPELINE_RUN')
                 if latest and as_of<latest: raise ValueError('A new processing date cannot precede completed processing')
@@ -319,10 +329,10 @@ class Pipeline:
                 counts=self.audit(batch,run_id,as_of)
                 self.verify(batch_id=bid)
                 self.execute(f"UPDATE {self.ns.sql}.INGEST_BATCH SET STATUS='COMPLETED' WHERE BATCH_ID=%s",(bid,))
-            self.attempt(bid,'TRANSFORM','COMPLETED')
+            self.attempt(bid,'TRANSFORM','COMPLETED',source=batch['SOURCE_SYSTEM'],feed=batch['FEED_TYPE'])
         except Exception as e:
             self.connection.rollback()
-            self.attempt(bid,'TRANSFORM','FAILED',type(e).__name__)
+            self.attempt(bid,'TRANSFORM','FAILED',type(e).__name__,batch.get('SOURCE_SYSTEM'),batch.get('FEED_TYPE'))
             raise
         return {'status':'COMPLETED','batch_id':bid,'run_id':run_id,**counts,'seconds':time.perf_counter()-started}
 
@@ -391,6 +401,12 @@ class Pipeline:
         now=datetime.now(timezone.utc)
         for spec in sources:
             feed,source=source_spec(spec)
+            for phase in ('INGEST','TRANSFORM'):
+                attempt=self.execute(f'''SELECT STATUS FROM {self.ns.sql}.PIPELINE_ATTEMPT
+                 WHERE SOURCE_SYSTEM=%s AND FEED_TYPE=%s AND PHASE=%s
+                 ORDER BY RECORDED_AT DESC,ATTEMPT_ID DESC LIMIT 1''',(source,feed,phase))
+                checks.append({'name':spec+':latest_'+phase.lower()+'_attempt',
+                               'passed':bool(attempt and attempt[0]['STATUS'] in ('COMPLETED','REPLAY_CONFIRMED'))})
             batches=self.execute(f'''SELECT BATCH_ID,STATUS,FINISHED_AT FROM {self.ns.sql}.INGEST_BATCH
              WHERE SOURCE_SYSTEM=%s AND FEED_TYPE=%s ORDER BY STARTED_AT DESC,BATCH_ID DESC LIMIT 1''',(source,feed))
             results=[]
