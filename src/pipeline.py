@@ -137,6 +137,11 @@ class Pipeline:
             if getattr(cur,'sfqid',None): self.query_ids.append(cur.sfqid)
             columns=[c[0] for c in cur.description] if cur.description else []
             return [dict(zip(columns,row)) for row in cur.fetchall()] if columns else []
+        except Exception:
+            query_id=getattr(cur,'sfqid',None)
+            if query_id and (not self.query_ids or self.query_ids[-1]!=query_id):
+                self.query_ids.append(query_id)
+            raise
         finally: cur.close()
 
     def scalar(self,sql,params=None):
