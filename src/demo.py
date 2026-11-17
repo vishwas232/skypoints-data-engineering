@@ -95,6 +95,9 @@ def run_demo(engine: Pipeline,as_of: date,progress=print):
 
         negative=replace(contract,source='SYNTHETIC_MEMBERS',identity_authority='SYNTHETIC_FIXTURE',snapshot_ts=datetime.combine(as_of,datetime.min.time()))
         rows=[member('QA_NULL','Synthetic Unknown',country='GB',DOB='',Last_Flight_Date='',Post_Code='00123'),
+              member('QA_GEO_NULL','Synthetic Missing Country',country=''),
+              member('QA_GEO_OTHER','Synthetic Other Country',country='DEU'),
+              member('QA_GEO_BAD','Synthetic Invalid Country',country='123'),
               member('QA_DATE','Synthetic Invalid Date',Enrollment_Date='20211313'),
               member('QA_MISSING','',country='USA'),
               member('QA_POST','Synthetic Invalid Post',Post_Code='ABCDE'),
@@ -114,7 +117,7 @@ def run_demo(engine: Pipeline,as_of: date,progress=print):
         raw,result=load(write_members(directory/'validation.txt',rows,HEADER+['Source_Update_Ts','Source_Sequence']),negative)
         for code in ('INVALID_ENROLLMENT_DATE','MISSING_MEMBER_NAME','INVALID_POST_CODE','INVALID_ACTIVE_FLAG',
                      'DUPLICATE_MEMBER_NAME','DUPLICATE_SOURCE_RECORD','CONFLICTING_MEMBER_VERSION','INVALID_DOB',
-                     'MEMBER_NAME_TOO_LONG','TIER_TOO_LONG','AGENT_TOO_LONG','STATE_TOO_LONG','FUTURE_DATE','INVALID_SOURCE_VERSION'):
+                     'MEMBER_NAME_TOO_LONG','TIER_TOO_LONG','AGENT_TOO_LONG','STATE_TOO_LONG','FUTURE_DATE','INVALID_SOURCE_VERSION','INVALID_COUNTRY'):
             check(errors(raw['batch_id'],code)>0,'Missing quarantine category: '+code)
         unknown=engine.execute(f"SELECT AGE,STALE_MEMBER,POST_CODE FROM {engine.ns.sql}.MEMBER_CURRENT WHERE GLOBAL_MEMBER_ID='SYNTHETIC_FIXTURE:QA_NULL'")[0]
         check(unknown=={'AGE':None,'STALE_MEMBER':None,'POST_CODE':'00123'},'Null/postcode semantics failed')
@@ -123,6 +126,15 @@ def run_demo(engine: Pipeline,as_of: date,progress=print):
         check(engine.scalar(f"SELECT {engine.ns.sql}.AGE_ON('2000-02-29'::DATE,'2023-02-28'::DATE)")==22,'Leap-year February boundary failed')
         check(engine.scalar(f"SELECT {engine.ns.sql}.AGE_ON('2000-02-29'::DATE,'2023-03-01'::DATE)")==23,'Leap-year March boundary failed')
         done('mandatory_types_dates_names_ids_postcodes_nulls_and_derived_boundaries',accepted=result['accepted_rows'],rejected=result['rejected_rows'])
+        for mid in ('QA_GEO_NULL','QA_GEO_OTHER'):
+            check(count('TABLE_OTHER_COUNTRIES','WHERE SOURCE_MEMBER_ID=%s',(mid,))==1,'Optional/unlisted country was not routed to OTHER')
+        geo=directory/'unknown_country_move.txt'
+        _,moved=load(write_members(geo,[member('QA_GEO_NULL','Synthetic Missing Country',country='USA')]),replace(negative,snapshot_ts=datetime.combine(as_of,datetime.min.time()),sequence=1))
+        check(count('TABLE_OTHER_COUNTRIES',"WHERE SOURCE_MEMBER_ID='QA_GEO_NULL'")==0 and count('TABLE_USA',"WHERE SOURCE_MEMBER_ID='QA_GEO_NULL'")==1,'Unknown-to-known movement left old country row')
+        load(write_members(geo,[member('QA_GEO_NULL','Synthetic Missing Country',country='')]),replace(negative,snapshot_ts=datetime.combine(as_of,datetime.min.time()),sequence=2))
+        check(count('TABLE_OTHER_COUNTRIES',"WHERE SOURCE_MEMBER_ID='QA_GEO_NULL'")==1 and count('TABLE_USA',"WHERE SOURCE_MEMBER_ID='QA_GEO_NULL'")==0,'Known-to-unknown movement left old country row')
+        check(count('COUNTRY_MOVEMENT_AUDIT',"WHERE GLOBAL_MEMBER_ID='SYNTHETIC_FIXTURE:QA_GEO_NULL'")==2,'Null country changes were missing movement audit')
+        done('optional_unlisted_countries_and_null_safe_movement_audit')
         malformed_flat=directory/'malformed_details.txt'
         malformed_flat.write_text('|H|'+'|'.join(HEADER)+'\n|D|Synthetic Malformed|QA_PARSE|20200101\n'+
           '|X|'+'|'.join(str(member('QA_MARKER','Synthetic Bad Marker').get(k,'')) for k in HEADER)+'\n')

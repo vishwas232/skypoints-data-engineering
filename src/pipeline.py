@@ -340,7 +340,7 @@ class Pipeline:
         affected=f'(SELECT DISTINCT GLOBAL_MEMBER_ID FROM {self.ns.sql}.STG_MEMBER_PROFILE WHERE BATCH_ID=%s AND VALIDATION_STATUS=\'VALID\')'
         columns=','.join('c.'+k for k in MEMBER_COLUMNS)
         for country,table in COUNTRIES.items():
-            match=("c.COUNTRY_CODE NOT IN ('IND','USA','AUS','CAN','PHL')" if country=='OTHER' else f"c.COUNTRY_CODE='{country}'")
+            match=("c.COUNTRY_CODE IS NULL OR c.COUNTRY_CODE NOT IN ('IND','USA','AUS','CAN','PHL')" if country=='OTHER' else f"c.COUNTRY_CODE IS NOT DISTINCT FROM '{country}'")
             self.execute(f'''DELETE FROM {self.ns.sql}.{table} t USING {self.ns.sql}.MEMBER_CURRENT c,{affected} a
              WHERE t.GLOBAL_MEMBER_ID=c.GLOBAL_MEMBER_ID AND c.GLOBAL_MEMBER_ID=a.GLOBAL_MEMBER_ID AND NOT ({match})''',(bid,))
             self.execute(f'''MERGE INTO {self.ns.sql}.{table} t USING (
