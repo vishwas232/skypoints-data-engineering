@@ -10,7 +10,7 @@ ETL assessment project with source profiling, Snowflake schema, raw ingestion, a
 | 2 — Snowflake schema | SQL prepared; execute in your own account | `sql/01_create_tables.sql`, `sql/02_schema_checks.sql` |
 | 3 — Raw ingestion | Implemented; connect to Snowflake to verify | Excel and JSON ingestion into raw Snowflake tables |
 | 4 — Staging / latest-wins / country movements | Implemented; local tests only | Validation, derived fields, canonical member and country updates |
-| 5 — Redemptions | Not implemented | JSON flattening and member join |
+| 5 — Redemptions | Implemented; local tests only | JSON flattening, verified member join, replay/conflict handling |
 | 6 — Tests and productionization | Not implemented | Automated checks, monitoring, scalability plan |
 
 ## Requirements
@@ -140,3 +140,23 @@ python -m src.transform_members --batch-id ACTUAL_COMPLETED_MEMBER_BATCH_ID --as
 All queries in `sql/05_verify_member_transform.sql` must return zero rows.
 
 No Snowflake run has been performed by this implementation task. The samples lack verified global identities and source update times; they are quarantined until a data owner supplies those facts. Do not guess mappings.
+
+## Phase 5: redemption processing and member join
+
+See the [Phase 5 runbook](docs/phase5.md) for input contracts, identity mapping,
+quarantine, transaction conflicts, audit, recovery, Snowflake verification, and
+Git commands. Run `sql/06_redemption_transform_schema.sql` after Phase 2/4 DDL.
+
+```cmd
+python -m unittest discover -s tests -v
+python -m src.transform_redemptions --dry-run --json-file data/samples/redemptions/example.json --as-of 2026-11-17
+python -m src.transform_redemptions --batch-id ACTUAL_COMPLETED_REDEMPTION_BATCH_ID --as-of 2026-11-17
+```
+
+All queries in `sql/07_verify_redemption_transform.sql` must return zero rows.
+The supplied JSON has two transactions but no verified identity link: both
+remain quarantined until a real mapping and canonical member exist. Exact
+transaction replays deduplicate; conflicting facts are quarantined because the
+feed has no authoritative update-version field. `REDEMPTION_MEMBER_DETAIL`
+joins loaded transactions to current member attributes. Run one writer for the
+entire schema. Phase 5 has been tested locally; Snowflake execution is unverified.
