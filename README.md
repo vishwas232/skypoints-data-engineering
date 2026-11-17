@@ -1,6 +1,6 @@
 # SkyPoints — Data Engineering Assessment
 
-ETL assessment project with source profiling (Phase 1) and Snowflake database design (Phase 2). The long-term target is a working file/JSON → Snowflake raw → staging → canonical member → country tables pipeline, with validation, audit, and safe incremental updates.
+ETL assessment project with source profiling, Snowflake schema, raw ingestion, and Phase 4 member transformations. The long-term target is a working file/JSON → Snowflake raw → staging → canonical member → country tables pipeline, with validation, audit, and safe incremental updates.
 
 ## Current implementation status
 
@@ -9,7 +9,7 @@ ETL assessment project with source profiling (Phase 1) and Snowflake database de
 | 1 — Profile incoming files | Implemented; run locally | `src/profile_inputs.py` and three assessment sample workbooks |
 | 2 — Snowflake schema | SQL prepared; execute in your own account | `sql/01_create_tables.sql`, `sql/02_schema_checks.sql` |
 | 3 — Raw ingestion | Implemented; connect to Snowflake to verify | Excel and JSON ingestion into raw Snowflake tables |
-| 4 — Staging / latest-wins / country movements | Not implemented | Validation, derived fields, canonical member and country updates |
+| 4 — Staging / latest-wins / country movements | Implemented; local tests only | Validation, derived fields, canonical member and country updates |
 | 5 — Redemptions | Not implemented | JSON flattening and member join |
 | 6 — Tests and productionization | Not implemented | Automated checks, monitoring, scalability plan |
 
@@ -124,3 +124,19 @@ member ID that is not automatically resolvable to the Excel files' local IDs;
 we must not invent a member linkage.
 
 Commit Phase 3 after validating: `git add . && git commit -m "feat: ingest member and redemption feeds into raw Snowflake tables"`.
+
+
+## Phase 4: transform members and maintain country tables
+
+See [the Phase 4 runbook](docs/phase4.md) for contracts, verified identity and source-version prerequisites, Snowflake verification, recovery, limitations, and Git commands.
+
+Run `sql/04_member_transform_schema.sql` before the transformation CLI:
+
+```cmd
+python -m unittest discover -s tests -v
+python -m src.transform_members --batch-id ACTUAL_COMPLETED_MEMBER_BATCH_ID --as-of 2026-11-17
+```
+
+All queries in `sql/05_verify_member_transform.sql` must return zero rows.
+
+No Snowflake run has been performed by this implementation task. The samples lack verified global identities and source update times; they are quarantined until a data owner supplies those facts. Do not guess mappings.
