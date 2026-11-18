@@ -1,0 +1,44 @@
+{
+  "status": "PASS",
+  "checked_at": "2026-11-17T21:00:48.033792+00:00",
+  "code_revision": "4625a381c0124b94081e091dd023e5e6e242cf64",
+  "python": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "os": "Windows",
+  "dependencies": {
+    "openpyxl": "3.1.5",
+    "snowflake-connector-python": "4.8.1",
+    "python-dotenv": "1.2.4"
+  },
+  "checks": [
+    {
+      "command": "python -B -m unittest discover -s tests -q",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "----------------------------------------------------------------------\nRan 77 tests in 0.571s\n\nOK"
+    },
+    {
+      "command": "python -m pip check",
+      "exit_code": 0,
+      "stdout": "No broken requirements found.",
+      "stderr": ""
+    },
+    {
+      "command": "python -B -m src.pipeline --help",
+      "exit_code": 0,
+      "stdout": "usage: pipeline.py [-h] [--schema SCHEMA]\n                   {deploy,verify,health,ingest,process,map} ...\n\nPrimary Snowflake-native pipeline. All writes require a dev/test namespace.\nUse ``python -m src.pipeline --help``. Legacy small-batch scripts remain\navailable for compatibility, but are not the scalable path or the deployment\nentry point.\n\npositional arguments:\n  {deploy,verify,health,ingest,process,map}\n\noptions:\n  -h, --help            show this help message and exit\n  --schema SCHEMA",
+      "stderr": ""
+    },
+    {
+      "command": "python -B -m src.ingest_raw --feed members --dry-run",
+      "exit_code": 0,
+      "stdout": "DRY RUN IND.xlsx: 3 records; batch=a2186f98325dea775c1e063ecb0e9322220e3b9f073448c7913b7b799ac34797\nDRY RUN USA.xlsx: 3 records; batch=82c739431629c315b057010d49e0263c8d18957c522d53965f4515159845cb00\nDRY RUN AUS.xlsx: 3 records; batch=364ed88662a28c1404443d7367f8abe521d416ad3dfe1b23ca1948e709c02795",
+      "stderr": ""
+    },
+    {
+      "command": "python -B -m src.transform_redemptions --dry-run --json-file data/samples/redemptions/example.json --as-of 2026-11-18",
+      "exit_code": 0,
+      "stdout": "{\"mode\": \"DRY_RUN_UNLINKED\", \"documents\": 1, \"items\": 2, \"rejected_items\": 2, \"reason_codes\": [\"UNRESOLVED_OR_AMBIGUOUS_IDENTITY\"]}",
+      "stderr": ""
+    }
+  ]
+}

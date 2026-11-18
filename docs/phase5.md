@@ -1,3 +1,5 @@
+> Historical compatibility runbook. For the current native submission use [NATIVE_RUNBOOK.md](NATIVE_RUNBOOK.md) and [verification.md](verification.md).
+
 # Phase 5: redemption JSON processing and verified member linkage
 
 `src/transform_redemptions.py` transforms completed Phase 3 REDEMPTION batches.

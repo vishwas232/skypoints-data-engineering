@@ -1,0 +1,33 @@
+{
+  "id": 44176627511,
+  "head_sha": "4625a381c0124b94081e091dd023e5e6e242cf64",
+  "status": "completed",
+  "conclusion": "success",
+  "html_url": "https://github.com/vishwas232/skypoints-data-engineering/actions/runs/44176627511",
+  "jobs": [
+    {
+      "name": "test (windows-latest, 3.13)",
+      "status": "completed",
+      "conclusion": "success",
+      "failed_steps": []
+    },
+    {
+      "name": "test (ubuntu-latest, 3.12)",
+      "status": "completed",
+      "conclusion": "success",
+      "failed_steps": []
+    },
+    {
+      "name": "test (windows-latest, 3.12)",
+      "status": "completed",
+      "conclusion": "success",
+      "failed_steps": []
+    },
+    {
+      "name": "test (ubuntu-latest, 3.13)",
+      "status": "completed",
+      "conclusion": "success",
+      "failed_steps": []
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+> Historical compatibility runbook. For the current native submission use [NATIVE_RUNBOOK.md](NATIVE_RUNBOOK.md) and [verification.md](verification.md).
+
 # Publish this project using Windows Command Prompt
 
 Create an **empty**, initially private repository named `skypoints-data-engineering` at https://github.com/new (do not initialize with a README).

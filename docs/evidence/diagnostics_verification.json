@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "schema": "SKYPOINTS_TEST_C90416144FA5",
+  "failed_query_id": "01c87aae-3203-f464-0018-d9aa000183ba",
+  "recorded_attempt_query_id": "01c87aae-3203-f464-0018-d9aa000183ba",
+  "schema_cleanup_verified": true,
+  "empty_schema_reconciliation": {
+    "status": "PASS",
+    "invariant_checks": 23
+  },
+  "code_revision": "4625a381c0124b94081e091dd023e5e6e242cf64",
+  "checked_at": "2026-11-17T21:03:04.425389+00:00"
+}

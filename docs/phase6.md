@@ -1,3 +1,5 @@
+> Historical compatibility runbook. For the current native submission use [NATIVE_RUNBOOK.md](NATIVE_RUNBOOK.md) and [verification.md](verification.md).
+
 # Phase 6: tests, CI, monitoring, and readiness
 
 Implemented locally: ingestion transaction and monitoring policy tests, offline

@@ -1,110 +1,113 @@
-# Verification evidence — 18 November 2026
+# Executed verification - 18 November 2026
 
-This records execution evidence after Phase 6, superseding earlier runbook
-statements that warehouse/CI verification had not yet occurred. It is not a
-production readiness or throughput claim. No credential values, member payloads,
-account identifiers, or database names are included.
+This is observed development/test evidence. It supersedes the older small-batch
+submission notes. Credentials, account/database identifiers and connection
+objects are excluded. Exact commands are in [the native runbook](NATIVE_RUNBOOK.md).
 
-## Executed results
+## Results
 
-| Verification | Result |
+| Check | Observed result |
 |---|---|
-| GitHub Actions, commit `9a05bb5` | 61-test suite; all four Windows/Linux, Python 3.12/3.13 jobs succeeded |
-| Assessment Snowflake connection/schema | Connected; Phase 2/4/5 objects already present |
-| Three real member batches | Completed; 9 inputs, 0 accepted, 9 quarantined |
-| Real redemption batch | Completed; 1 document, 2 items, 0 accepted items, 2 quarantined items |
-| Unchanged real batch replay | All four batches returned SKIPPED |
-| Permanent canonical data after verification | 0 members and 0 transactions; no guessed identities inserted |
-| Synthetic warehouse acceptance | All seven scenarios passed in unique session-temporary tables |
-| Live health report | 71 checks, 62 passed, 9 policy failures; integrity SQL returned zero rows |
+| Offline regression suite | 77 tests PASS; Python 3.13; dependency compatibility PASS |
+| GitHub code CI | All 4 Windows/Linux Python 3.12/3.13 jobs succeeded at `4625a38` |
+| Native deployment | 21 tables, internal stage, 3 SQL functions and joined view in approved dev/test namespaces |
+| Full file-based Snowflake acceptance | 22 scenarios PASS; 851.32s; 2,066 tracked SQL queries |
+| Final full reconciliation | All 23 invariants PASS |
+| Clean development member feed | 5 RAW / 5 accepted / 5 current; one in each named country |
+| Clean development JSON feed | 1 RAW document / 2 accepted items / 2 transactions; both join Elena |
+| Clean development quarantine/health | 0 rejects; PASS with unchanged 26h / 5% / 2h policies |
+| Retained acceptance schema | `SKYPOINTS_TEST_8F19CA477730`; includes deliberate negative fixtures |
+| Rollback/restart | Actual server rollback leaves business-table snapshots unchanged; retry succeeds |
+| Commit uncertainty | Actual server commit followed by simulated lost client response; retry confirms checkpoint |
+| Writer concurrency | Actual second Snowflake connection times out on held lock and recovers after release |
+| Failed-query audit | Actual failed SQL ID equals attempt QUERY_ID; isolated diagnostic schema cleanup verified |
+| Legacy schema | Before/after counts unchanged; no guessed identity rows inserted |
 
-Latest CI evidence: [successful 61-test GitHub Actions run](https://github.com/vishwas232/skypoints-data-engineering/actions/runs/44152629650)
-at commit `9a05bb5`. This includes the three new isolation guard tests.
-The earlier [58-test run](https://github.com/vishwas232/skypoints-data-engineering/actions/runs/44150696013)
-at `02c2f8c` also succeeded. All 61 tests passed locally before `9a05bb5` was pushed.
+[Successful code CI run](https://github.com/vishwas232/skypoints-data-engineering/actions/runs/44176627511). Aggregate machine-readable reports:
+[offline](evidence/offline_verification.json), [native acceptance](evidence/native_acceptance.json),
+[development](evidence/development_verification.json), [failed-query diagnostic](evidence/diagnostics_verification.json),
+[CI](evidence/github_code_ci.json), [1k benchmark](evidence/benchmark_1000.json),
+[10k benchmark](evidence/benchmark_10000.json).
 
-Assessment staging now has 9 member rows and 3 redemption rows (one DOCUMENT,
-two ITEMs). There are 12 quarantine entries: 9 members, one redemption
-envelope, and its two items. Quarantine counts deliberately distinguish
-documents and items. RAW remains at 9 member rows and 1 redemption document.
-Member identity mapping remains empty. All four transformation run audits
-were committed; unchanged replay produced no additional runs.
+The full suite loaded revision `71332f1`; the subsequent `4625a38` change captures failed
+SQL IDs and is verified by its dedicated real diagnostic plus 77 offline tests and
+CI. Final benchmarks hash all current Python/SQL source files and reject a code
+change during a run. Development reconciliation/health was repeated under `4625a38`.
+Reports contain query IDs for secured warehouse inspection; they are not a
+production monitoring service or complete query-profile/cost analysis.
 
-## Actual warehouse success-path tests
+## What the live suite proved
 
-`src/snowflake_acceptance.py` executed these scenarios against Snowflake:
+Official PDF H/D file ingestion, compact/date/DOB contracts and all five named
+countries; original JSON flatten/join; unchanged RAW and completed-run replay;
+newer-country movement with old removal; late-arrival protection and equal-version
+conflicts; required fields, widths, types, invalid/future dates, explicit versions,
+postcode `00123`, optional NULL values, 90/91-day stale and leap birthday boundaries;
+optional/unlisted country routing and NULL-safe moves/audit; malformed detail
+preservation; all original Excel files remain unresolved; numeric-name/boolean
+flag rejection; controlled LOCAL collision mappings/reprocessing/rekey refusal;
+cross-batch transaction replay; identical/conflicting duplicate IDs in one document;
+unauthorized correction hold and approved newer pending-to-completed change audit;
+invalid/empty JSON document/item accounting; actual rollback, commit-response
+fault, lock contention, later-date replay and all 23 final invariants.
 
-1. Load an explicitly synthetic verified member and skip its unchanged replay.
-2. Move IND to AUS, remove the old country row, and record exactly one move.
-3. Process an older IND record without reversing the current AUS winner.
-4. Reject a newer invalid member without replacing valid current state.
-5. Link a synthetic redemption through a verified synthetic mapping; skip its
-   unchanged batch and deduplicate the same facts from another batch.
-6. Quarantine conflicting transaction miles without overwriting the target.
-7. Inject an exception after staging/current/country writes but before the run
-   audit insert, verify all 19 temporary tables match their pre-run snapshots
-   after actual server rollback, then retry successfully.
+The retained TEST schema has 50 member RAW observations,
+8 redemption documents, 13 current members,
+2 transaction facts, 37 current quarantine entries
+and 27 committed evaluation runs. These are deliberately
+mixed fixtures, not the clean development baseline. The broad validation batch
+has 6 accepted / 18 rejected rows; retained original Excel inputs contribute 9 rejected
+rows. Quarantine includes both DOCUMENT and ITEM records where appropriate.
 
-These runs exercised the existing Python transformations and their actual
-Snowflake DML/reconciliation SQL. They did not execute new permanent schema
-DDL, simulate session death or network-level commit loss, test parallel
-writers, measure production throughput, or verify a restricted monitoring role.
+## Monitoring investigation
 
-The harness creates 19 uniquely named `CREATE TEMPORARY TABLE ... LIKE ...`
-fixtures in its own session. A table allowlist rewrites the transformations'
-fully qualified table references to those fixture names. Unknown references
-are refused. It does not shadow permanent names, drop permanent objects, or
-add synthetic data to permanent assessment tables. Session close removes the
-fixtures, including on failure. See [Snowflake temporary-table behavior](https://docs.snowflake.com/en/user-guide/tables-temp-transient).
-Permanent canonical/quarantine counts were checked from a separate session.
+* Clean fresh PDF-member/redemption health passes. Source delivery freshness uses
+  actual completed ingestion time; 2024 source business version is a different clock.
+* Deliberately invalid NEGATIVE_REDEMPTIONS fails exactly its document and item
+  rejection-rate checks. This is correct: both rejected proportions exceed 5%.
+  Freshness/lag are not suppressed to conceal quality failures.
+* Final valid-source health in the mixed test schema also passes. Selecting all
+  negative fixture sources would intentionally produce quality failures.
+* Historical legacy health had 71 checks / 9 failures: three member source rejection
+  rates, redemption document/item rejection rates, and four transform timing checks.
+  Required global mappings/source metadata were absent, and AUS has an invalid
+  enrollment date. Old RAW timestamps also predate UTC-session normalization and
+  batches were transformed later. Their exact original wall-clock meaning needs
+  owner review; timestamps and policy thresholds were not rewritten.
 
-To reproduce, first install requirements and run existing schema migrations in
-your selected assessment database. Then from the repository root:
+The new native run does not retroactively repair those historical business inputs
+or claim old SLA compliance. Legacy counts remained RAW 9 members / 1 document,
+stage 9 members / 3 redemption records, 12 rejects, 0 current members and 0 transactions.
+The original Excel identity problem remains an explicitly missing business input.
 
-```cmd
-python -m unittest discover -s tests -v
-python -m src.snowflake_acceptance --run --as-of 2026-11-18
-```
+## Measured performance
 
-The explicit `--run` flag opts into warehouse activity. Credentials are loaded
-privately as in previous phases. The harness prints scenario names/results,
-never payloads or credential values. A failed run reports only exception type
-and connector error codes. Its transactions affect temporary fixtures only;
-the separately executed real-sample transformation results above persist in
-the assessment staging/quarantine/audit tables.
+| Rows | Warehouse | Load+transform seconds | Observed rows/s | Python allocator peak bytes | One-row incremental transform seconds |
+|---|---|---|---|---|---|
+| 1,000 | X-Small | 24.10 | 41.5 | 1,913,400 | 21.91 |
+| 10,000 | X-Small | 28.71 | 348.3 | 2,034,066 | 23.14 |
 
-## Remaining blockers and limits
+These are actual single synthetic trials after deployment. Load+transform includes
+preparation, PUT/COPY and transform/control/reconciliation work. It excludes schema
+provisioning, source generation, final cleanup and the separately measured one-row
+update. Each benchmark reconciles all rows, preserves current cardinality on the
+one-row country move, and runs full invariants. Test schemas are automatically dropped.
+Python tracemalloc excludes native connector memory, process RSS and warehouse
+memory. Each report has 203 query IDs including provisioning/control work and hashes
+of the executed source revision. Timing varies with service/network/warehouse state.
 
-All three source namespaces' member item rejection-rate checks fail. Both
-redemption document and item rejection-rate checks fail. The provided samples
-lack owner-verified global identity mappings; member snapshots also lack
-trusted source-update metadata. AUS also includes an invalid enrollment date.
-Provide verified facts and corrected source data rather than inventing links.
-Real successful sample linkage cannot be claimed until that happens.
+Fixed per-query/control overhead dominates these small workloads; the one-row
+transform remains around22-23seconds. No million / 100 million / billion-row workload,
+sustained throughput, peak concurrency, cost budget or operational SLA is claimed.
+The existing bounded benchmark generator supports larger approved experiments,
+but architecture arithmetic is not capacity evidence.
 
-All four source transformation timing checks also fail under the example
-two-hour policy. Historic RAW timestamps predate the UTC-session change, and
-the source batches were transformed later. Verify original timestamp meaning
-and elapsed time before interpreting these failures; no old timestamps or
-policy thresholds were altered to obtain PASS. This evidence does not show a
-healthy end-to-end operational SLA.
+## Remaining operational boundaries
 
-Still outstanding: role isolation, scheduler/alert delivery, forced session
-termination, network-level uncertain commit recovery, coordinated writers,
-restoration/RPO/RTO, and the measured bulk-load benchmarks described in
-`docs/productionization.md`. The seven small synthetic scenarios establish
-functional warehouse behavior, not billion-row capacity.
-
-## Save final submission documentation
-
-```cmd
-git add README.md docs/verification.md docs/submission.md
-git diff --cached --check
-git diff --cached --stat
-git commit -m "docs: prepare assessment submission and update CI evidence"
-git push origin main
-```
-
-The acceptance harness and its tests were committed and pushed as `9a05bb5`.
-This final documentation update has not been committed or pushed. Review the
-staged diff and leave unrelated untracked files untouched.
+No production data/database was modified. New namespaces are restricted to the
+native DEV/TEST conventions; cleanup requires fresh TEST ownership. Guards do not
+replace least-privilege database roles. Production scheduling/alerts, daily derived
+refresh, retention/stage cleanup, representative peak benchmarking and tested
+RPO/RTO remain deployment work. Real owner-verified identity/version/DOB contracts
+remain required before publishing ambiguous external feeds. See
+[productionization](productionization.md) and [source decisions](SOURCE_CONTRACT.md).

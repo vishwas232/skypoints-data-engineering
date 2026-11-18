@@ -1,13 +1,16 @@
-# Automated tests
+# Verification layers
 
-Run `python -m unittest discover -s tests -v` from the project root. No Snowflake
-account or `.env` is required. Tests cover samples, ingestion transactions,
-date/age/staleness boundaries, identity collisions, deterministic winners,
-country movements, redemption validation/replays/conflicts, quarantine
-reprocessing, rollback, lost commit response, and monitoring policies/redaction.
+Run `python -m unittest discover -s tests -v` from the repository root. Offline
+regressions cover source adapters, immutable file bytes, legacy compatibility,
+member/redemption validation, replay and rollback guards, health policy and
+native namespace/isolation/contract safety. CI runs Python3.12/3.13 on Windows/Linux.
 
-Database doubles test Python control flow and bound writes; they do not execute
-Snowflake SQL or establish server transactions/concurrency. See `docs/phase6.md`
-for remaining warehouse acceptance tests. `.github/workflows/ci.yml` configures
-offline Windows/Linux checks for Python 3.12/3.13, with no Snowflake secrets.
-A workflow definition is not evidence of a completed GitHub Actions run.
+Offline tests cannot prove Snowflake SQL compiles or transaction locks work.
+`python -m src.demo --report docs/evidence/my_demo.json` performs actual file-based
+acceptance in a fresh owned Snowflake test schema and cleans it afterward. Add
+`--keep-schema` to inspect it. The compatibility acceptance CLI invokes that same
+safe harness. See the runbook for credentials and exact commands.
+
+The benchmark CLI performs real staged loads and incremental transforms with
+reconciliation and frozen-code hashes. Its sample measurements are not capacity
+or SLA claims. Committed evidence and limitations are in docs/verification.md.

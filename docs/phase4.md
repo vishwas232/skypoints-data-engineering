@@ -1,3 +1,5 @@
+> Historical compatibility runbook. For the current native submission use [NATIVE_RUNBOOK.md](NATIVE_RUNBOOK.md) and [verification.md](verification.md).
+
 # Phase 4: member transformation and country loading
 
 Implemented by `src/transform_members.py`, with additive DDL in
